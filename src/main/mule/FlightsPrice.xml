@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:wsc="http://www.mulesoft.org/schema/mule/wsc" xmlns:validation="http://www.mulesoft.org/schema/mule/validation"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:batch="http://www.mulesoft.org/schema/mule/batch" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd
+http://www.mulesoft.org/schema/mule/wsc http://www.mulesoft.org/schema/mule/wsc/current/mule-wsc.xsd">
+	<wsc:config name="Web_Service_Consumer_Config" doc:name="Web Service Consumer Config" doc:id="64954e19-ca16-48de-8b5e-2b569b9b77a7" >
+		<wsc:connection wsdlLocation="calculator.wsdl" service="Calculator" port="CalculatorSoap" address="http://www.dneonline.com/calculator.asmx" >
+			<wsc:web-service-security actor="http://schemas.xmlsoap.org/soap/actor/next" />
+		</wsc:connection>
+	</wsc:config>
+	<http:request-config name="HTTP_Request_configuration1" doc:name="HTTP Request configuration" doc:id="41e78082-ef6a-4300-b5a8-e8c0218d660a" >
+		<http:request-connection host="localhost" port="8084" />
+	</http:request-config>
+	<http:request-config name="HTTP_Request_configuration2" doc:name="HTTP Request configuration" doc:id="91e3b91a-f780-43e6-a364-ad67131ce502" >
+		<http:request-connection host="localhost" port="8085" />
+	</http:request-config>
+	<http:request-config name="HTTP_Request_configuration3" doc:name="HTTP Request configuration" doc:id="37c01c34-59ae-44d6-8132-c30d3417610a" basePath="/api">
+		<http:request-connection host="training4-american-ws.cloudhub.io"/>
+	</http:request-config>
+	<flow name="CalculateFlightsFlow" doc:id="fd976ed2-0f68-4ebf-9e38-28d34c893c28">
+		<logger level="INFO" doc:name="START" doc:id="5b65e008-fa97-49fc-9228-ec320e0dce18" message="START" />
+		<set-variable value='#[attributes.queryParams.destination default "LAX"]' doc:name="destination" doc:id="4b6b2733-e91f-4424-88ef-1f9f4ced282c" variableName="destination"/>
+		<http:request method="GET" doc:name="Request" doc:id="9fdc8bb2-e025-4b2f-916b-4040b9e34361" config-ref="HTTP_Request_configuration3" path="/flights" />
+		<ee:transform doc:name="Transform Message" doc:id="0faac401-7da4-4d0a-b0e0-0b13c48cb8ba">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+var dest = payload filter ((item, index) -> item.destination == vars.destination )
+---
+{
+	destination: vars.destination,
+	planes: (dest map ((item, index) -> {
+		"type": item.plane."type",
+		pricePerSeats: Mule::lookup("multiplyFlow", [Mule::lookup('SubstractFlow', {totalSeats: item.plane.totalSeats, emptySeats: item.emptySeats},8000), item.price],8000) 
+	} )) groupBy ((item, index) -> item."type") mapObject ((value, key, index) -> plane: {
+		"type": value."type"[0],
+		pricePerSeats: sum(value.pricePerSeats) as String ++ "\$"
+	}) pluck ((value) -> (value))
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="END" doc:id="820e3b90-d792-4255-b041-7af1d1d23938" message="END" />
+	</flow>
+	<flow name="SubstractFlow" doc:id="e8187560-217c-4f76-810e-0b1dc7054c3a">
+		<logger level="INFO" doc:name="Start " doc:id="94332b10-a33b-4208-8925-b39fa6e0835d" message="Start SubstractFlow"/>
+		<ee:transform doc:name="Input" doc:id="04467adb-90ab-4edd-a824-48d234b709c3">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/xml
+ns ns0 http://tempuri.org
+ns ns01 http://tempuri.org/
+---
+{
+	ns01#Subtract: {
+		ns01#intA: payload.totalSeats,
+		ns01#intB: payload.emptySeats
+	},
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<wsc:consume operation="Subtract" doc:name="Subtract Operation" doc:id="2b3da857-945e-45a1-9a89-3cdbe979f6d1" config-ref="Web_Service_Consumer_Config" />
+		<ee:transform doc:name="Output" doc:id="32a71142-2dcb-4c58-b801-d06f86465fd0">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+ns ns0 http://tempuri.org/
+---
+
+ payload.body.ns0#SubtractResponse.ns0#SubtractResult
+]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="Success" doc:id="3d25aa35-7191-484d-83d8-5b28eb046bdc" message="SubstractFlow succeed"/>
+	</flow>
+	<flow name="multiplyFlow" doc:id="5441548c-dab3-4959-8ffd-8c3041c0aa02">
+		<logger level="INFO" doc:name="Start " doc:id="8e5f6964-6350-440a-8c7a-32c87f9e9f6a" message="Start MultiplyFlow "/>
+		<ee:transform doc:name="Input" doc:id="18701306-0e7d-41c2-a48f-f1a961e8bfa7">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/xml
+ns ns0 http://tempuri.org/
+---
+{
+	ns0#Multiply: {
+		ns0#intA: payload[0],
+		ns0#intB: payload[1]
+	}
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<wsc:consume operation="Multiply" doc:name="Multiply Operation" doc:id="a9fc19e4-919f-4fdc-a0b6-b00f7a047b7b" config-ref="Web_Service_Consumer_Config" />
+		<ee:transform doc:name="Output" doc:id="2c2f8e82-2010-4ef1-ad5f-fafacf9e2060">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0ns ns0 http://tempuri.org/
+
+output application/json
+---
+payload.body.ns0#MultiplyResponse.ns0#MultiplyResult]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="Sucess" doc:id="9da52aa7-e1e9-4a5c-83de-974d25c7f6e1" message="MultiplyFlow succeed"/>
+	</flow>
+</mule>

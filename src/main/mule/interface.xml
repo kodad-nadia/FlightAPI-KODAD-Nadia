@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+	<flow name="SystemFlights" doc:id="b571a3f9-5eff-4dbd-8c02-c1a3d7c69d3b" >
+		<http:listener doc:name="Listener" doc:id="1cb19e2b-cfeb-432b-b5e2-fc40ac5aeaa7" config-ref="HTTP_Listener_config" path="getflights" />
+		<flow-ref doc:name="Flow Reference" doc:id="f49371b2-fe82-4c1a-a746-367ffea84c5e" name="CalculateFlightsFlow"/>
+	</flow>
+</mule>
